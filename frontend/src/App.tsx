@@ -147,7 +147,7 @@ function App() {
         </p>
       </header>
 
-      <section className="metric-grid">
+      <section className="metric-grid animate-fade-in" style={{ animationDelay: "0.1s" }}>
         <article className="metric-card">
           <span>Total campaigns</span>
           <strong>{metrics.total}</strong>
@@ -166,7 +166,7 @@ function App() {
         </article>
       </section>
 
-      <section className="layout-grid">
+      <section className="layout-grid animate-fade-in" style={{ animationDelay: "0.2s" }}>
         <CreateCampaignForm onCreate={handleCreate} apiError={createError} />
         <CampaignDetailPanel
           campaign={selectedCampaign}
@@ -178,13 +178,15 @@ function App() {
         />
       </section>
 
-      <CampaignsTable
-        campaigns={campaigns}
-        selectedCampaignId={selectedCampaignId}
-        onSelect={setSelectedCampaignId}
-      />
+      <section className="section-margin animate-fade-in" style={{ animationDelay: "0.3s" }}>
+        <CampaignsTable
+          campaigns={campaigns}
+          selectedCampaignId={selectedCampaignId}
+          onSelect={setSelectedCampaignId}
+        />
+      </section>
 
-      <section className="secondary-grid">
+      <section className="secondary-grid section-margin animate-fade-in" style={{ animationDelay: "0.4s" }}>
         <CampaignTimeline history={history} />
         <IssueBacklog issues={issues} />
       </section>

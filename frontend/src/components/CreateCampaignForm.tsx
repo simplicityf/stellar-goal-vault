@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { CreateCampaignPayload } from "../types/campaign";
 
 interface CreateCampaignFormProps {

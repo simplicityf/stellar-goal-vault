@@ -1,4 +1,6 @@
+import { History } from "lucide-react";
 import { CampaignEvent } from "../types/campaign";
+import { EmptyState } from "./EmptyState";
 
 interface CampaignTimelineProps {
   history: CampaignEvent[];
@@ -32,7 +34,10 @@ export function CampaignTimeline({ history }: CampaignTimelineProps) {
       </div>
 
       {history.length === 0 ? (
-        <div className="empty-state">Select a campaign to see lifecycle events.</div>
+        <EmptyState
+          icon={History}
+          message="Select a campaign to see lifecycle events."
+        />
       ) : (
         <div className="timeline">
           {history.map((event) => (

@@ -1,4 +1,6 @@
+import { LayoutGrid } from "lucide-react";
 import { Campaign } from "../types/campaign";
+import { EmptyState } from "./EmptyState";
 
 interface CampaignsTableProps {
   campaigns: Campaign[];
@@ -17,12 +19,12 @@ export function CampaignsTable({
 }: CampaignsTableProps) {
   if (campaigns.length === 0) {
     return (
-      <section className="card">
-        <div className="section-heading">
-          <h2>Campaign board</h2>
-          <p className="muted">No campaigns yet. Create the first vault to make this board active.</p>
-        </div>
-      </section>
+      <EmptyState
+        variant="card"
+        icon={LayoutGrid}
+        title="Campaign board"
+        message="No campaigns yet. Create the first vault to make this board active."
+      />
     );
   }
 

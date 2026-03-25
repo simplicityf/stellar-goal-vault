@@ -1,6 +1,7 @@
 import cors from "cors";
 import "dotenv/config";
 import express, { Request, Response } from "express";
+import { config } from "./config";
 import { z } from "zod";
 import {
   addPledge,

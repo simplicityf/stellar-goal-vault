@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
+import { MousePointer2 } from "lucide-react";
 import { Campaign } from "../types/campaign";
+import { EmptyState } from "./EmptyState";
 
 interface CampaignDetailPanelProps {
   campaign: Campaign | null;
@@ -28,7 +30,13 @@ export function CampaignDetailPanel({
   }, [campaign?.id]);
 
   if (!campaign) {
-    return <section className="card empty-state">Pick a campaign from the board to manage it.</section>;
+    return (
+      <EmptyState
+        variant="card"
+        icon={MousePointer2}
+        message="Pick a campaign from the board to manage it."
+      />
+    );
   }
 
   const activeCampaign = campaign;

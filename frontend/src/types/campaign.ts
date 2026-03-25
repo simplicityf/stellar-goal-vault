@@ -33,6 +33,10 @@ export interface Campaign {
   claimedAt?: number;
   progress: CampaignProgress;
   pledges?: Pledge[];
+  metadata?: {
+    imageUrl?: string;
+    externalLink?: string;
+  };
 }
 
 export interface CampaignEvent {
