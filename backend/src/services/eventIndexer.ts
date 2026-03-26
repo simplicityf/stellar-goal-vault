@@ -1,0 +1,116 @@
+import axios from "axios";
+import { getDb } from "./db";
+import { recordEvent } from "./eventHistory";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org:443";
+const CONTRACT_ID = process.env.CONTRACT_ID || "";
+
+// Poll interval in ms
+const POLL_INTERVAL = 10000;
+
+// Track last ingested event (by Soroban event sequence or timestamp)
+let lastIngestedTimestamp = 0;
+
+
+// Fetch events from Soroban RPC
+async function fetchSorobanEvents() {
+  if (!CONTRACT_ID) return [];
+  try {
+    const res = await axios.post(
+      SOROBAN_RPC_URL,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getEvents",
+        params: {
+          contractIds: [CONTRACT_ID],
+          startLedger: 0, // TODO: Use last processed ledger for efficiency
+          filters: [],
+          limit: 100,
+        },
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+    if (res.data && res.data.result && Array.isArray(res.data.result.events)) {
+      return res.data.result.events;
+    }
+    return [];
+  } catch (err) {
+    console.error("[Indexer] Error fetching Soroban events:", err);
+    return [];
+  }
+}
+
+
+function isDuplicateEvent(db: any, event: any): boolean {
+  // Use event id/hash/ledger+index for idempotency
+  if (!event.ledger || event.event_index === undefined) return false;
+  const row = db.prepare(
+    `SELECT 1 FROM campaign_events WHERE metadata LIKE ? LIMIT 1`
+  ).get(`%"ledger":${event.ledger}%"event_index":${event.event_index}%`);
+  return !!row;
+}
+
+
+function parseSorobanEvent(event: any) {
+  // Example event: { ledger, event_index, type, contract_id, ...data }
+  // Map to local event schema
+  if (!event || !event.type || !event.contract_id) return null;
+  // Only process contract events
+  if (event.type !== "contract" || event.contract_id !== CONTRACT_ID) return null;
+  // Parse event topic and data
+  const topic = event.topic && Array.isArray(event.topic) ? event.topic.map((t: any) => t.toString()).join(":") : "";
+  let eventType: any = undefined;
+  if (topic.includes("Goal:Create")) eventType = "created";
+  else if (topic.includes("Goal:Pledge")) eventType = "pledged";
+  else if (topic.includes("Goal:Claim")) eventType = "claimed";
+  else if (topic.includes("Goal:Refund")) eventType = "refunded";
+  if (!eventType) return null;
+  // Extract campaignId, actor, amount, etc. from event.value or event.data
+  let campaignId = "";
+  let actor = undefined;
+  let amount = undefined;
+  let metadata = { ...event };
+  try {
+    if (event.value) {
+      if (event.value.campaign_id !== undefined) campaignId = String(event.value.campaign_id);
+      if (event.value.creator) actor = event.value.creator;
+      if (event.value.contributor) actor = event.value.contributor;
+      if (event.value.amount !== undefined) amount = Number(event.value.amount);
+      metadata = { ...event, ...event.value };
+    }
+  } catch {}
+  return { campaignId, eventType, timestamp: event.timestamp || Date.now() / 1000, actor, amount, metadata };
+}
+
+async function indexSorobanEvents() {
+  const db = getDb();
+  try {
+    const events = await fetchSorobanEvents();
+    for (const event of events) {
+      if (isDuplicateEvent(db, event)) continue;
+      const parsed = parseSorobanEvent(event);
+      if (!parsed || !parsed.campaignId || !parsed.eventType) continue;
+      recordEvent(
+        parsed.campaignId,
+        parsed.eventType,
+        Math.floor(parsed.timestamp),
+        parsed.actor,
+        parsed.amount,
+        parsed.metadata
+      );
+      lastIngestedTimestamp = Math.max(lastIngestedTimestamp, Math.floor(parsed.timestamp));
+      console.log(`[Indexer] Ingested event:`, parsed);
+    }
+  } catch (err) {
+    console.error("[Indexer] Error indexing events:", err);
+  }
+}
+
+export function startEventIndexer() {
+  setInterval(indexSorobanEvents, POLL_INTERVAL);
+  console.log(`[Indexer] Soroban event indexer started. Polling every ${POLL_INTERVAL / 1000}s.`);
+}

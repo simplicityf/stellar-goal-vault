@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { MousePointer2 } from "lucide-react";
 import { Campaign } from "../types/campaign";
-import { EmptyState } from "./EmptyState";
+import { ContributorSummary } from "./ContributorSummary";
 
 interface CampaignDetailPanelProps {
   campaign: Campaign | null;
   actionError?: string | null;
   actionMessage?: string | null;
+  isPledgePending?: boolean;
   onPledge: (campaignId: string, contributor: string, amount: number) => Promise<void>;
   onClaim: (campaign: Campaign) => Promise<void>;
   onRefund: (campaignId: string, contributor: string) => Promise<void>;
@@ -16,6 +17,7 @@ export function CampaignDetailPanel({
   campaign,
   actionError,
   actionMessage,
+  isPledgePending = false,
   onPledge,
   onClaim,
   onRefund,
@@ -96,6 +98,8 @@ export function CampaignDetailPanel({
         </article>
       </div>
 
+      <ContributorSummary pledges={activeCampaign.pledges} assetCode={activeCampaign.assetCode} />
+
       <form className="form-grid" onSubmit={handlePledge}>
         <label className="field-group">
           <span>Contributor account</span>
@@ -126,7 +130,7 @@ export function CampaignDetailPanel({
             type="submit"
             disabled={isSubmitting || !activeCampaign.progress.canPledge}
           >
-            Add pledge
+            {isPledgePending ? "Submitting..." : "Add pledge"}
           </button>
           <button
             className="btn-ghost"
@@ -147,6 +151,9 @@ export function CampaignDetailPanel({
         </div>
       </form>
 
+      {isPledgePending ? (
+        <p className="pending-note">Pledge is pending confirmation and will reconcile automatically.</p>
+      ) : null}
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {actionMessage ? <p className="form-success">{actionMessage}</p> : null}
 

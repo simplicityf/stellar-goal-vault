@@ -14,6 +14,7 @@ import {
   listCampaigns,
   refundContributor,
 } from "./services/campaignStore";
+import { startEventIndexer } from "./services/eventIndexer";
 import { getCampaignHistory } from "./services/eventHistory";
 import { fetchOpenIssues } from "./services/openIssues";
 import {
@@ -28,6 +29,10 @@ import {
 
 export const app = express();
 const port = Number(process.env.PORT ?? 3001);
+
+// Initialize DB and start indexer
+initCampaignStore();
+startEventIndexer();
 
 app.use(cors());
 app.use(express.json());
@@ -214,7 +219,6 @@ app.get("/api/open-issues", async (_req: Request, res: Response) => {
 app.get("/api/config", (_req: Request, res: Response) => {
   res.json({
     data: {
-      allowedAssets: config.allowedAssets,
     },
   });
 });
