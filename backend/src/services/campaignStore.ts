@@ -184,11 +184,28 @@ export function calculateProgress(
   };
 }
 
-export function listCampaigns(): CampaignRecord[] {
+export interface ListCampaignsOptions {
+  searchQuery?: string;
+}
+
+export function listCampaigns(options?: ListCampaignsOptions): CampaignRecord[] {
   const db = getDb();
-  const rows = db
-    .prepare(`SELECT * FROM campaigns ORDER BY created_at DESC`)
-    .all() as CampaignRow[];
+  
+  let query = `SELECT * FROM campaigns`;
+  const params: any[] = [];
+  
+  if (options?.searchQuery && options.searchQuery.trim()) {
+    const searchTerm = `%${options.searchQuery.trim().toLowerCase()}%`;
+    query += ` WHERE 
+      LOWER(id) LIKE ? OR 
+      LOWER(title) LIKE ? OR 
+      LOWER(creator) LIKE ?`;
+    params.push(searchTerm, searchTerm, searchTerm);
+  }
+  
+  query += ` ORDER BY created_at DESC`;
+  
+  const rows = db.prepare(query).all(...params) as CampaignRow[];
 
   return rows.map(rowToCampaign);
 }

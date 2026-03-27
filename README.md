@@ -63,6 +63,8 @@ Base URL:
 
 ### `GET /api/campaigns`
 - Returns all campaigns with computed progress
+- Query parameters:
+  - `q` (optional): Search query to filter campaigns by title, creator, or campaign ID (case-insensitive)
 
 ### `GET /api/campaigns/:id`
 - Returns one campaign with pledges and event history

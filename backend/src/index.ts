@@ -154,13 +154,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 });
 
 app.get("/api/campaigns", (req: Request, res: Response) => {
-  const data = filterCampaignList(
-    listCampaigns().map((campaign) => ({
-      ...campaign,
-      progress: calculateProgress(campaign),
-    })),
-    parseCampaignListFilters(req.query),
-  );
+
 
   res.json({ data });
 });
