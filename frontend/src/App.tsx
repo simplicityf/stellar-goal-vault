@@ -86,7 +86,7 @@ function App() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedCampaignDetails, setSelectedCampaignDetails] = useState<Campaign | null>(null);
   const [createError, setCreateError] = useState<ApiError | null>(null);
-  const [actionError, setActionError] = useState<ApiError | null>(null);
+  const [, setActionError] = useState<ApiError | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [pendingPledgeCampaignId, setPendingPledgeCampaignId] = useState<string | null>(null);
   const [invalidUrlCampaignId, setInvalidUrlCampaignId] = useState<string | null>(null);

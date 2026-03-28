@@ -44,7 +44,6 @@ export function CampaignsTable({
   campaigns,
   selectedCampaignId,
   onSelect,
-  isLoading,
   invalidUrlCampaignId,
 }: CampaignsTableProps) {
   const [selectedAssetCode, setSelectedAssetCode] = useState("");

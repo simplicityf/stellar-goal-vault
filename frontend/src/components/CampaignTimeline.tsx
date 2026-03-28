@@ -26,7 +26,7 @@ function describeEvent(event: CampaignEvent): string {
   }
 }
 
-export function CampaignTimeline({ history, isLoading }: CampaignTimelineProps) {
+export function CampaignTimeline({ history }: CampaignTimelineProps) {
   if (history.length === 0) {
     return (
       <EmptyState

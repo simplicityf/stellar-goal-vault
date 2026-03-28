@@ -7,7 +7,7 @@ interface IssueBacklogProps {
   isLoading?: boolean;
 }
 
-export function IssueBacklog({ issues, isLoading }: IssueBacklogProps) {
+export function IssueBacklog({ issues }: IssueBacklogProps) {
   if (issues.length === 0) {
     return (
       <EmptyState
