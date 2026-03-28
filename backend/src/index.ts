@@ -7,6 +7,7 @@ import { config, walletIntegrationReady } from "./config";
 import {
   addPledge,
   calculateProgress,
+  CampaignRecord,
   CampaignStatus,
   claimCampaign,
   createCampaign,
@@ -26,20 +27,23 @@ import {
   claimCampaignPayloadSchema,
   createCampaignPayloadSchema,
   createPledgePayloadSchema,
+  paginationSchema,
   reconcilePledgePayloadSchema,
   refundPayloadSchema,
   zodIssuesToErrorMessage,
   zodIssuesToValidationIssues,
 } from "./validation/schemas";
+import { checkDbHealth } from "./services/db";
 
 export const app = express();
 const port = Number(process.env.PORT ?? config.port);
 const CAMPAIGN_STATUSES: CampaignStatus[] = ["open", "funded", "claimed", "failed"];
 
 type CampaignListItem = ReturnType<typeof calculateProgress> extends infer Progress
-  ? ReturnType<typeof listCampaigns>[number] & { progress: Progress }
+  ? CampaignRecord & { progress: Progress }
   : never;
 
+// Initialize DB
 initCampaignStore();
 
 app.use(
@@ -120,10 +124,16 @@ export function normalizeStatusFilter(statusRaw: unknown): CampaignStatus | unde
 export function parseCampaignListFilters(query: {
   asset?: unknown;
   status?: unknown;
-}) {
+  q?: unknown;
+}): {
+  asset?: string;
+  status?: CampaignStatus;
+  searchQuery?: string;
+} {
   return {
     asset: normalizeAssetFilter(query.asset),
     status: normalizeStatusFilter(query.status),
+    searchQuery: normalizeQueryValue(query.q),
   };
 }
 
@@ -142,29 +152,49 @@ export function filterCampaignList(
 }
 
 app.get("/api/health", (_req: Request, res: Response) => {
-  res.json({
+  const database = checkDbHealth();
+  const healthy = database.reachable;
+
+  res.status(healthy ? 200 : 503).json({
     service: "stellar-goal-vault-backend",
-    status: "ok",
+    status: healthy ? "ok" : "degraded",
     timestamp: new Date().toISOString(),
+    uptimeSeconds: Number(process.uptime().toFixed(3)),
+    database,
   });
 });
 
 app.get("/api/campaigns", (req: Request, res: Response) => {
-  const filters = parseCampaignListFilters({
-    asset: req.query.asset,
-    status: req.query.status,
+  const parsedPagination = paginationSchema.safeParse(req.query);
+  if (!parsedPagination.success) {
+    sendValidationError(parsedPagination.error.issues);
+    return;
+  }
+
+  const { page, limit } = parsedPagination.data;
+  const filters = parseCampaignListFilters(req.query);
+
+  const { campaigns, totalCount } = listCampaigns({
+    ...filters,
+    assetCode: filters.asset,
+    page,
+    limit,
   });
-  const searchQuery = normalizeQueryValue(req.query.q);
 
-  const data = filterCampaignList(
-    listCampaigns({ searchQuery }).map((campaign) => ({
-      ...campaign,
-      progress: calculateProgress(campaign),
-    })),
-    filters,
-  );
+  const data: CampaignListItem[] = campaigns.map((campaign) => ({
+    ...campaign,
+    progress: calculateProgress(campaign),
+  }));
 
-  res.json({ data });
+  res.json({
+    data,
+    pagination: {
+      totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit),
+    },
+  });
 });
 
 app.get("/api/campaigns/:id", (req: Request, res: Response) => {
@@ -309,6 +339,7 @@ app.get("/api/config", (_req: Request, res: Response) => {
   });
 });
 
+// Global Error Handler
 app.use((err: any, req: Request, res: Response, _next: express.NextFunction) => {
   const statusCode = err instanceof AppError ? err.statusCode : (err.statusCode ?? 500);
   const code = err instanceof AppError ? err.code : (err.code ?? "INTERNAL_SERVER_ERROR");

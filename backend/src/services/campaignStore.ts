@@ -1,5 +1,5 @@
 import { getDb, initDb } from "./db";
-import { getCampaignHistory, recordEvent } from "./eventHistory";
+import { getCampaignHistory, recordEvent, BlockchainMetadata } from "./eventHistory";
 
 export type CampaignStatus = "open" | "funded" | "claimed" | "failed";
 
@@ -93,11 +93,7 @@ type ServiceError = Error & {
   code?: string;
 };
 
-function toServiceError(
-  message: string,
-  statusCode: number,
-  code = "BAD_REQUEST",
-): ServiceError {
+function toServiceError(message: string, statusCode: number, code = "BAD_REQUEST"): ServiceError {
   const error = new Error(message) as ServiceError;
   error.statusCode = statusCode;
   error.code = code;
@@ -211,22 +207,81 @@ export function calculateProgress(
 
 export interface ListCampaignsOptions {
   searchQuery?: string;
+  assetCode?: string;
+  status?: CampaignStatus;
+  page?: number;
+  limit?: number;
 }
 
-export function listCampaigns(options?: ListCampaignsOptions): CampaignRecord[] {
+export interface ListCampaignsResult {
+  campaigns: CampaignRecord[];
+  totalCount: number;
+}
+
+export function listCampaigns(options?: ListCampaignsOptions): ListCampaignsResult {
   const db = getDb();
-  let query = `SELECT * FROM campaigns`;
-  const params: unknown[] = [];
+  const page = options?.page ?? 1;
+  const limit = options?.limit ?? 10;
+  const offset = (page - 1) * limit;
+
+  const whereClauses: string[] = [];
+  const params: any[] = [];
 
   if (options?.searchQuery && options.searchQuery.trim()) {
     const searchTerm = `%${options.searchQuery.trim().toLowerCase()}%`;
-    query += ` WHERE LOWER(id) LIKE ? OR LOWER(title) LIKE ? OR LOWER(creator) LIKE ?`;
+    whereClauses.push(`(
+      LOWER(id) LIKE ? OR 
+      LOWER(title) LIKE ? OR 
+      LOWER(creator) LIKE ?
+    )`);
     params.push(searchTerm, searchTerm, searchTerm);
   }
 
-  query += ` ORDER BY created_at DESC`;
-  const rows = db.prepare(query).all(...params) as CampaignRow[];
-  return rows.map(rowToCampaign);
+  if (options?.assetCode) {
+    whereClauses.push(`asset_code = ?`);
+    params.push(options.assetCode.toUpperCase());
+  }
+
+  if (options?.status) {
+    const now = Math.floor(Date.now() / 1000);
+    switch (options.status) {
+      case "claimed":
+        whereClauses.push(`claimed_at IS NOT NULL`);
+        break;
+      case "funded":
+        whereClauses.push(`claimed_at IS NULL AND pledged_amount >= target_amount`);
+        break;
+      case "failed":
+        whereClauses.push(
+          `claimed_at IS NULL AND pledged_amount < target_amount AND deadline <= ?`,
+        );
+        params.push(now);
+        break;
+      case "open":
+        whereClauses.push(
+          `claimed_at IS NULL AND pledged_amount < target_amount AND deadline > ?`,
+        );
+        params.push(now);
+        break;
+    }
+  }
+
+  let baseQuery = `FROM campaigns`;
+
+  if (whereClauses.length > 0) {
+    baseQuery += ` WHERE ` + whereClauses.join(" AND ");
+  }
+
+  const countQuery = `SELECT COUNT(*) as total ${baseQuery}`;
+  const totalCount = (db.prepare(countQuery).get(...params) as { total: number }).total;
+
+  const dataQuery = `SELECT * ${baseQuery} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  const rows = db.prepare(dataQuery).all(...params, limit, offset) as CampaignRow[];
+
+  return {
+    campaigns: rows.map(rowToCampaign),
+    totalCount,
+  };
 }
 
 export function getCampaign(campaignId: string): CampaignRecord | undefined {
@@ -241,9 +296,7 @@ export function getCampaign(campaignId: string): CampaignRecord | undefined {
 export function getPledges(campaignId: string): PledgeRecord[] {
   const db = getDb();
   const rows = db
-    .prepare(
-      `SELECT * FROM pledges WHERE campaign_id = ? ORDER BY created_at DESC, id DESC`,
-    )
+    .prepare(`SELECT * FROM pledges WHERE campaign_id = ? ORDER BY created_at DESC, id DESC`)
     .all(campaignId) as PledgeRow[];
 
   return rows.map(rowToPledge);
@@ -290,12 +343,20 @@ export function createCampaign(input: CampaignInput): CampaignRecord {
     metadataJson: campaign.metadata ? JSON.stringify(campaign.metadata) : null,
   });
 
-  recordEvent(campaign.id, "created", campaign.createdAt, campaign.creator, undefined, {
-    title: campaign.title,
-    assetCode: campaign.assetCode,
-    targetAmount: campaign.targetAmount,
-    deadline: campaign.deadline,
-  });
+  recordEvent(
+    campaign.id,
+    "created",
+    campaign.createdAt,
+    campaign.creator,
+    undefined,
+    {
+      title: campaign.title,
+      assetCode: campaign.assetCode,
+      targetAmount: campaign.targetAmount,
+      deadline: campaign.deadline,
+    },
+    { source: "local" } as BlockchainMetadata,
+  );
 
   return campaign;
 }
@@ -319,9 +380,8 @@ export function addPledge(campaignId: string, input: PledgeInput): CampaignRecor
   const createdAt = nowInSeconds();
   const roundedAmount = round(input.amount);
   db.prepare(
-    `INSERT INTO pledges (
-      campaign_id, contributor, amount, created_at, refunded_at, transaction_hash
-    ) VALUES (?, ?, ?, ?, NULL, NULL)`,
+    `INSERT INTO pledges (campaign_id, contributor, amount, created_at, refunded_at, transaction_hash)
+     VALUES (?, ?, ?, ?, NULL, NULL)`,
   ).run(campaignId, input.contributor, roundedAmount, createdAt);
 
   db.prepare(`UPDATE campaigns SET pledged_amount = pledged_amount + ? WHERE id = ?`).run(
@@ -329,10 +389,18 @@ export function addPledge(campaignId: string, input: PledgeInput): CampaignRecor
     campaignId,
   );
 
-  recordEvent(campaignId, "pledged", createdAt, input.contributor, roundedAmount, {
-    newTotalPledged: round(campaign.pledgedAmount + roundedAmount),
-    source: "backend-mvp",
-  });
+  recordEvent(
+    campaignId,
+    "pledged",
+    createdAt,
+    input.contributor,
+    roundedAmount,
+    {
+      newTotalPledged: round(campaign.pledgedAmount + roundedAmount),
+      source: "backend-mvp",
+    },
+    { source: "local" } as BlockchainMetadata,
+  );
 
   return getCampaign(campaignId)!;
 }
@@ -384,12 +452,22 @@ export function reconcileOnChainPledge(
       campaignId,
     );
 
-    recordEvent(campaignId, "pledged", createdAt, input.contributor, roundedAmount, {
-      newTotalPledged: round(campaign.pledgedAmount + roundedAmount),
-      onChain: true,
-      reconciled: true,
-      txHash: input.transactionHash,
-    });
+    recordEvent(
+      campaignId,
+      "pledged",
+      createdAt,
+      input.contributor,
+      roundedAmount,
+      {
+        newTotalPledged: round(campaign.pledgedAmount + roundedAmount),
+        onChain: true,
+        reconciled: true,
+      },
+      {
+        source: "soroban",
+        txHash: input.transactionHash,
+      } as BlockchainMetadata,
+    );
   });
 
   reconcile();
@@ -418,9 +496,17 @@ export function claimCampaign(campaignId: string, creator: string): CampaignReco
   const claimedAt = nowInSeconds();
   db.prepare(`UPDATE campaigns SET claimed_at = ? WHERE id = ?`).run(claimedAt, campaignId);
 
-  recordEvent(campaignId, "claimed", claimedAt, creator, campaign.pledgedAmount, {
-    targetAmount: campaign.targetAmount,
-  });
+  recordEvent(
+    campaignId,
+    "claimed",
+    claimedAt,
+    creator,
+    campaign.pledgedAmount,
+    {
+      targetAmount: campaign.targetAmount,
+    },
+    { source: "local" } as BlockchainMetadata,
+  );
 
   return getCampaign(campaignId)!;
 }
@@ -470,9 +556,17 @@ export function refundContributor(campaignId: string, contributor: string): {
     campaignId,
   );
 
-  recordEvent(campaignId, "refunded", refundedAt, contributor, refundedAmount, {
-    refundedPledgeCount: refundablePledges.length,
-  });
+  recordEvent(
+    campaignId,
+    "refunded",
+    refundedAt,
+    contributor,
+    refundedAmount,
+    {
+      refundedPledgeCount: refundablePledges.length,
+    },
+    { source: "local" } as BlockchainMetadata,
+  );
 
   return {
     campaign: getCampaign(campaignId)!,

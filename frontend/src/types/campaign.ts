@@ -40,6 +40,15 @@ export interface Campaign {
   };
 }
 
+export interface BlockchainMetadata {
+  txHash?: string;
+  ledgerNumber?: number;
+  ledgerCloseTime?: number;
+  eventIndex?: number;
+  contractId?: string;
+  source?: "local" | "soroban";
+}
+
 export interface CampaignEvent {
   id: number;
   campaignId: string;
@@ -53,6 +62,7 @@ export interface CampaignEvent {
     onChain?: boolean;
     reconciled?: boolean;
   };
+  blockchainMetadata?: BlockchainMetadata;
 }
 
 export interface CreateCampaignPayload {

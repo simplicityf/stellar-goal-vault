@@ -18,7 +18,7 @@ export function IssueBacklog({ issues, isLoading = false }: IssueBacklogProps) {
       </div>
 
       {isLoading ? (
-        <p className="muted">Loading contribution ideas…</p>
+        <p className="muted">Loading contribution ideas...</p>
       ) : issues.length === 0 ? (
         <EmptyState
           icon={ListTodo}

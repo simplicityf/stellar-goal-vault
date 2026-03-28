@@ -32,7 +32,7 @@ export function CampaignTimeline({ history, isLoading = false }: CampaignTimelin
       <section className="card">
         <div className="section-heading">
           <h2>Timeline</h2>
-          <p className="muted">Loading campaign activity…</p>
+          <p className="muted">Loading campaign activity...</p>
         </div>
       </section>
     );
@@ -59,13 +59,12 @@ export function CampaignTimeline({ history, isLoading = false }: CampaignTimelin
           {[...history].reverse().map((event) => {
             const isPending = event.metadata?.pending === true;
             const txHash =
-              typeof event.metadata?.txHash === "string" ? event.metadata.txHash : undefined;
+              typeof event.metadata?.txHash === "string"
+                ? event.metadata.txHash
+                : event.blockchainMetadata?.txHash;
 
             return (
-              <article
-                key={event.id}
-                className={`timeline-item ${isPending ? "pending" : ""}`}
-              >
+              <article key={event.id} className={`timeline-item ${isPending ? "pending" : ""}`}>
                 <div className="timeline-dot" aria-hidden />
                 <div className="timeline-copy">
                   <strong>
@@ -77,9 +76,7 @@ export function CampaignTimeline({ history, isLoading = false }: CampaignTimelin
                     {event.actor ? `Actor: ${event.actor.slice(0, 12)}...` : "System event"}
                     {typeof event.amount === "number" ? ` | Amount: ${event.amount}` : ""}
                   </span>
-                  {txHash ? (
-                    <span className="mono muted">Tx hash: {txHash}</span>
-                  ) : null}
+                  {txHash ? <span className="mono muted">Tx hash: {txHash}</span> : null}
                 </div>
               </article>
             );

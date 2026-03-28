@@ -34,7 +34,7 @@ export function CampaignsTable({
       <section className="card">
         <div className="section-heading">
           <h2>Campaign board</h2>
-          <p className="muted">Loading campaigns…</p>
+          <p className="muted">Loading campaigns...</p>
         </div>
       </section>
     );
