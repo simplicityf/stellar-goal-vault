@@ -161,6 +161,109 @@ async function waitForTransaction(
   );
 }
 
+export async function submitFreighterClaim(params: {
+  campaignId: string;
+  creator: string;
+  config: AppConfig;
+}): Promise<PledgeTransactionResult> {
+  const { campaignId, creator, config } = params;
+
+  if (!config.contractId || !config.sorobanRpcUrl) {
+    throw buildError(
+      "CONFIG_MISSING",
+      "Wallet signing is not configured yet. Set CONTRACT_ID and SOROBAN_RPC_URL on the backend.",
+    );
+  }
+
+  const server = getRpcServer(config.sorobanRpcUrl);
+  const sourceAccount = await server.getAccount(creator).catch((error) => {
+    throw buildError(
+      "SOURCE_ACCOUNT_LOAD_FAILED",
+      getErrorMessage(error, "Unable to load the creator account from Soroban RPC."),
+    );
+  });
+
+  const operation = new Contract(config.contractId).call(
+    "claim",
+    nativeToScVal(BigInt(campaignId), { type: "u64" }),
+    Address.fromString(creator).toScVal(),
+  );
+
+  const transaction = new TransactionBuilder(sourceAccount, {
+    fee: BASE_FEE,
+    networkPassphrase: config.networkPassphrase,
+  })
+    .addOperation(operation)
+    .setTimeout(60)
+    .build();
+
+  const simulation = await server.simulateTransaction(transaction).catch((error) => {
+    throw buildError(
+      "SIMULATION_FAILED",
+      getErrorMessage(error, "Unable to simulate the claim transaction."),
+    );
+  });
+
+  if ("error" in simulation) {
+    throw buildError("SIMULATION_FAILED", `Simulation failed: ${simulation.error}`);
+  }
+
+  if ("restorePreamble" in simulation) {
+    throw buildError(
+      "STATE_RESTORE_REQUIRED",
+      "The contract state is archived and must be restored before claiming.",
+    );
+  }
+
+  const preparedTransaction = await server.prepareTransaction(transaction).catch((error) => {
+    throw buildError(
+      "SIMULATION_PREPARE_FAILED",
+      getErrorMessage(error, "Failed to prepare the simulated claim transaction."),
+    );
+  });
+
+  let signedXdr: string;
+  try {
+    signedXdr = await signTransaction(preparedTransaction.toXDR(), {
+      accountToSign: creator,
+      networkPassphrase: config.networkPassphrase,
+    });
+  } catch (error) {
+    throw buildError(
+      "SIGNING_FAILED",
+      getErrorMessage(error, "Freighter rejected or failed to sign the claim transaction."),
+    );
+  }
+
+  if (!signedXdr) {
+    throw buildError("SIGNING_FAILED", "Freighter did not return a signed transaction.");
+  }
+
+  const signedTransaction = TransactionBuilder.fromXDR(signedXdr, config.networkPassphrase);
+  const sendResult = await server.sendTransaction(signedTransaction).catch((error) => {
+    throw buildError(
+      "SUBMISSION_FAILED",
+      getErrorMessage(error, "Failed to submit the signed claim transaction to Soroban RPC."),
+    );
+  });
+
+  if (sendResult.status === "ERROR") {
+    throw buildError(
+      "CONTRACT_CALL_FAILED",
+      `Soroban RPC rejected the claim transaction ${sendResult.hash}.`,
+    );
+  }
+
+  if (sendResult.status === "TRY_AGAIN_LATER") {
+    throw buildError(
+      "SUBMISSION_RETRY",
+      "Soroban RPC asked the client to retry claim submission later.",
+    );
+  }
+
+  return waitForTransaction(server, sendResult.hash);
+}
+
 export async function submitFreighterPledge(params: {
   campaignId: string;
   contributor: string;

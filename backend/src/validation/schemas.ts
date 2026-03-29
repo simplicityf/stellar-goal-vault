@@ -74,6 +74,11 @@ export const reconcilePledgePayloadSchema = z.object({
 
 export const claimCampaignPayloadSchema = z.object({
   creator: stellarAccountIdSchema,
+  transactionHash: z
+    .string()
+    .trim()
+    .regex(TX_HASH_REGEX, "transactionHash must be a 64-character hex hash."),
+  confirmedAt: unixTimestampSchema.optional(),
 });
 
 export const refundPayloadSchema = z.object({

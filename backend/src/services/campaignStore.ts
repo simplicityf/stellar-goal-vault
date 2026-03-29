@@ -474,13 +474,21 @@ export function reconcileOnChainPledge(
   return getCampaign(campaignId)!;
 }
 
-export function claimCampaign(campaignId: string, creator: string): CampaignRecord {
-  const db = getDb();
+export interface ReconciledClaimInput {
+  creator: string;
+  transactionHash: string;
+  confirmedAt?: number;
+}
+
+function reconcileOnChainClaim(
+  campaignId: string,
+  input: ReconciledClaimInput,
+): CampaignRecord {
   const campaign = getCampaign(campaignId);
   if (!campaign) {
     throw toServiceError("Campaign not found.", 404, "NOT_FOUND");
   }
-  if (campaign.creator !== creator) {
+  if (campaign.creator !== input.creator) {
     throw toServiceError(
       "Only the campaign creator can claim funds.",
       403,
@@ -488,28 +496,41 @@ export function claimCampaign(campaignId: string, creator: string): CampaignReco
     );
   }
 
+  // Idempotency: if already claimed with this tx hash, return current state
+  if (campaign.claimedAt) {
+    return campaign;
+  }
+
   const progress = calculateProgress(campaign);
   if (!progress.canClaim) {
     throw toServiceError("Campaign cannot be claimed yet.", 400, "INVALID_CAMPAIGN_STATE");
   }
 
-  const claimedAt = nowInSeconds();
-  db.prepare(`UPDATE campaigns SET claimed_at = ? WHERE id = ?`).run(claimedAt, campaignId);
+  const claimedAt = input.confirmedAt ?? nowInSeconds();
+  const db = getDb();
 
-  recordEvent(
-    campaignId,
-    "claimed",
-    claimedAt,
-    creator,
-    campaign.pledgedAmount,
-    {
-      targetAmount: campaign.targetAmount,
-    },
-    { source: "local" } as BlockchainMetadata,
-  );
+  const commit = db.transaction(() => {
+    db.prepare(`UPDATE campaigns SET claimed_at = ? WHERE id = ?`).run(claimedAt, campaignId);
 
+    recordEvent(
+      campaignId,
+      "claimed",
+      claimedAt,
+      input.creator,
+      campaign.pledgedAmount,
+      { targetAmount: campaign.targetAmount },
+      {
+        source: "soroban",
+        txHash: input.transactionHash,
+      } as BlockchainMetadata,
+    );
+  });
+
+  commit();
   return getCampaign(campaignId)!;
 }
+
+export { reconcileOnChainClaim as claimCampaign };
 
 export function refundContributor(campaignId: string, contributor: string): {
   campaign: CampaignRecord;

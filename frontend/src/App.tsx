@@ -15,7 +15,7 @@ import {
   reconcilePledge,
   refundCampaign,
 } from "./services/api";
-import { connectFreighterWallet, submitFreighterPledge } from "./services/freighter";
+import { connectFreighterWallet, submitFreighterClaim, submitFreighterPledge } from "./services/freighter";
 import { ApiError, AppConfig, Campaign, CampaignEvent, OpenIssue } from "./types/campaign";
 
 function delay(ms: number): Promise<void> {
@@ -313,18 +313,58 @@ function App() {
   }
 
   async function handleClaim(campaign: Campaign) {
+    if (!appConfig) {
+      setActionError({ message: "The app configuration is still loading." });
+      return;
+    }
+
+    if (!connectedWallet) {
+      setActionError({
+        message: "Connect Freighter before claiming campaign funds.",
+        code: "WALLET_REQUIRED",
+      });
+      return;
+    }
+
+    if (connectedWallet !== campaign.creator) {
+      setActionError({
+        message: "Only the campaign creator can claim funds. Connect the creator wallet.",
+        code: "FORBIDDEN",
+      });
+      return;
+    }
+
     setActionError(null);
-    setActionMessage(null);
+    setActionMessage("Simulating claim transaction...");
+
     try {
-      await claimCampaign(campaign.id, campaign.creator);
+      const transactionResult = await submitFreighterClaim({
+        campaignId: campaign.id,
+        creator: connectedWallet,
+        config: appConfig,
+      });
+
+      setActionMessage(
+        `Claim confirmed on-chain. Reconciling local state for ${transactionResult.transactionHash}...`,
+      );
+
+      await claimCampaign(
+        campaign.id,
+        connectedWallet,
+        transactionResult.transactionHash,
+        transactionResult.confirmedAt,
+      );
+
       await refreshCampaigns(campaign.id);
       await Promise.all([
         refreshHistory(campaign.id),
         refreshSelectedCampaign(campaign.id),
       ]);
-      setActionMessage("Campaign claimed successfully.");
+
+      setActionMessage(`Campaign claimed. Tx hash: ${transactionResult.transactionHash}`);
     } catch (error) {
       setActionError(toApiError(error));
+      setActionMessage(null);
     }
   }
 

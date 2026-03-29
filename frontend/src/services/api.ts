@@ -93,11 +93,16 @@ export async function reconcilePledge(
   return body.data;
 }
 
-export async function claimCampaign(campaignId: string, creator: string): Promise<Campaign> {
+export async function claimCampaign(
+  campaignId: string,
+  creator: string,
+  transactionHash: string,
+  confirmedAt: number,
+): Promise<Campaign> {
   const response = await fetch(`${API_BASE}/campaigns/${campaignId}/claim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ creator }),
+    body: JSON.stringify({ creator, transactionHash, confirmedAt }),
   });
   const body = await parseResponse<{ data: Campaign }>(response);
   return body.data;

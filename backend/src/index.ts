@@ -279,7 +279,11 @@ app.post("/api/campaigns/:id/claim", (req: Request, res: Response) => {
     return;
   }
 
-  const campaign = claimCampaign(parsedId.value, parsedBody.data.creator);
+  const campaign = claimCampaign(parsedId.value, {
+    creator: parsedBody.data.creator,
+    transactionHash: parsedBody.data.transactionHash,
+    confirmedAt: parsedBody.data.confirmedAt,
+  });
   res.json({ data: { ...campaign, progress: calculateProgress(campaign) } });
 });
 
